@@ -1,0 +1,64 @@
+{
+  "source": "https://github.com/Liuzkai/CodexQuotaTray/blob/a89f33f0aa8395d421567f83f7720beb7c08b7d3/tools/IconGenerator.cs",
+  "source_blob_sha": "8b4bbe770dbdf606d0349762ab35d57f3f68f702",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 SYD-Official",
+  "canvas_size": 256,
+  "sizes": [16, 20, 24, 32, 40, 48, 64, 96, 128, 256],
+  "render_scale": 4,
+  "minimum_render_size": 64,
+  "pillow_antialias_scale": 4,
+  "card": {
+    "bounds": [10, 10, 236, 236],
+    "corner_radius": 50,
+    "gradient_start_rgb": [24, 38, 52],
+    "gradient_end_rgb": [10, 17, 25],
+    "gradient_angle_degrees": 55,
+    "border_rgb": [78, 102, 121],
+    "border_width": 4,
+    "minimum_border_width_at_render_size": 2
+  },
+  "arcs": [
+    {
+      "name": "quota_track",
+      "bounds": [45, 45, 166, 166],
+      "rgb": [58, 76, 91],
+      "width": 18,
+      "minimum_width_at_render_size": 2,
+      "start_degrees": -90,
+      "sweep_degrees": 359.9,
+      "round_caps": true
+    },
+    {
+      "name": "quota_cyan",
+      "bounds": [45, 45, 166, 166],
+      "rgb": [49, 205, 228],
+      "width": 18,
+      "minimum_width_at_render_size": 2,
+      "start_degrees": -90,
+      "sweep_degrees": 292,
+      "round_caps": true
+    },
+    {
+      "name": "inner_blue",
+      "bounds": [67, 67, 122, 122],
+      "rgb": [63, 159, 230],
+      "width": 7,
+      "minimum_width_at_render_size": 1.5,
+      "start_degrees": 105,
+      "sweep_degrees": 135,
+      "round_caps": true,
+      "minimum_output_size": 32
+    },
+    {
+      "name": "letter_c",
+      "bounds": [88, 83, 86, 90],
+      "rgb": [247, 250, 252],
+      "width": 20,
+      "minimum_width_at_render_size": 2,
+      "start_degrees": 43,
+      "sweep_degrees": 274,
+      "round_caps": true
+    }
+  ]
+}

@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "assets/**"
       - "app.manifest"
       - "LICENSE"
       - "README-delivery-template.txt"
@@ -38,7 +39,9 @@ jobs:
           $root = $env:GITHUB_WORKSPACE
           $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
           $version = '2.6.0'
-          $name = "CodexQuotaTray-v$version"
+          $buildRevision = 'icon.1'
+          $name = "CodexQuotaTray-v$version-$buildRevision"
+          $iconPath = Join-Path $root 'assets\CodexQuotaTray.ico'
           $package = Join-Path $root 'build\package'
           $dist = Join-Path $root 'dist'
           New-Item -ItemType Directory -Force $package, $dist | Out-Null
@@ -48,7 +51,9 @@ jobs:
 
           # The application source, manifest and references match the upstream build.
           # Do not execute build.ps1, IconGenerator, ParserTests, previews or the app.
-          # Only the static Explorer EXE icon is omitted; runtime tray icons are unchanged.
+          # Embed the checked-in data-only ICO; runtime tray icons and all application code are unchanged.
+          if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw 'Checked-in icon was not found.' }
+          $iconHash = (Get-FileHash -LiteralPath $iconPath -Algorithm SHA256).Hash.ToLowerInvariant()
           $references = @(
             'System.dll',
             'System.Core.dll',
@@ -72,6 +77,7 @@ jobs:
           $arguments = @(
             '/nologo', '/codepage:65001', '/target:winexe', '/optimize+',
             ('/win32manifest:' + (Join-Path $root 'app.manifest')),
+            ('/win32icon:' + $iconPath),
             ('/out:' + $exe)
           )
           $arguments += @($references | ForEach-Object { '/reference:' + $_ })
@@ -95,8 +101,11 @@ jobs:
           $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
 
           Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $package
+          Copy-Item -LiteralPath $iconPath -Destination $package
+          Copy-Item -LiteralPath (Join-Path $root 'assets\ICON-PROVENANCE.txt') -Destination $package
           $readme = Get-Content -LiteralPath (Join-Path $root 'README-delivery-template.txt') -Raw -Encoding UTF8
           $readme = $readme.Replace('{{VERSION}}', $version).Replace('{{FILE_NAME}}', "$name.exe").Replace('{{FILE_SIZE}}', $bytes.Length.ToString()).Replace('{{SHA256}}', $exeHash)
+          $readme = $readme.Replace("CodexQuotaTray-v$version-README.txt", "$name-README.txt")
           $utf8 = New-Object System.Text.UTF8Encoding($false)
           [IO.File]::WriteAllText((Join-Path $package "$name-README.txt"), $readme, $utf8)
           [IO.File]::WriteAllText((Join-Path $package 'SOURCE_COMMIT.txt'), ($env:GITHUB_SHA + "`r`n"), $utf8)
@@ -104,6 +113,8 @@ jobs:
           $buildInfo = [ordered]@{
             application = 'CodexQuotaTray'
             version = $version
+            buildRevision = $buildRevision
+            embeddedIconSha256 = $iconHash
             repository = $env:GITHUB_REPOSITORY
             sourceCommit = $env:GITHUB_SHA
             originalSourceCommit = 'a89f33f0aa8395d421567f83f7720beb7c08b7d3'
@@ -118,12 +129,14 @@ jobs:
             workflowAttempt = $env:GITHUB_RUN_ATTEMPT
             executableSha256 = $exeHash
             executableBytes = $bytes.Length
-            verification = 'Compilation, PE GUI header and version resource checks only; no runtime tests.'
-            icon = 'Static Explorer EXE icon omitted to avoid executing IconGenerator. Runtime tray and UI code are unchanged.'
+            verification = 'Compilation, PE GUI header, version resource and embedded icon checks only; no runtime tests.'
+            icon = 'Original project icon design recreated declaratively as a checked-in 10-size transparent ICO; embedded PE icon resources verified byte-for-byte. Runtime tray and UI code are unchanged.'
             signing = 'Unsigned community fork build; not an official OpenAI or upstream release.'
           }
           [IO.File]::WriteAllText((Join-Path $package 'BUILDINFO.json'), ($buildInfo | ConvertTo-Json -Depth 5), $utf8)
           $inputFiles = @($sources.FullName) + @(
+            $iconPath,
+            (Join-Path $root 'assets\ICON-PROVENANCE.txt'),
             (Join-Path $root 'app.manifest'),
             (Join-Path $root '.github\workflows\build-windows.yml')
           )
@@ -136,7 +149,9 @@ jobs:
             'Full application source compiled without removing features.',
             'No repository executable, Codex CLI command, or parser test was run during this build.',
             'This build did not access user Codex sessions, credentials, auth.json, or API keys.',
-            'Only the static Explorer EXE icon is omitted; runtime tray icons and UI are unchanged.',
+            'The original icon design is embedded using a 10-size transparent ICO; runtime tray icons and UI are unchanged.',
+            'ICO recreated declaratively with trusted Pillow rendering. Rasterization may differ slightly from upstream GDI+.',
+            'Release build revision: icon.1. Application version and all functional source code remain 2.6.0.',
             'The EXE is unsigned. Compilation and checksums are not a security guarantee.',
             'The original manual update feature remains and targets upstream SYD-Official releases.',
             'See BUILDINFO.json, SOURCE_COMMIT.txt and checksum files for provenance.'
@@ -164,14 +179,130 @@ jobs:
             "ZIP SHA-256: $zipHash",
             "",
             'All application features preserved. Compile-only verification; app and tests were not executed.',
-            'Unsigned build. Static Explorer file icon omitted; runtime tray icons are unchanged.'
+            'Unsigned icon.1 build. Original icon design embedded; runtime tray icons are unchanged.'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Verify all embedded icon resources without executing the EXE
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+          import struct
+          
+          expected_sizes = {16, 20, 24, 32, 40, 48, 64, 96, 128, 256}
+          ico = Path("assets/CodexQuotaTray.ico").read_bytes()
+          exe = Path("dist/CodexQuotaTray-v2.6.0-icon.1.exe").read_bytes()
+          
+          def unpack(fmt, data, offset):
+              size = struct.calcsize(fmt)
+              if offset < 0 or offset + size > len(data):
+                  raise ValueError("Out-of-bounds binary structure")
+              return struct.unpack_from(fmt, data, offset)
+          
+          reserved, kind, count = unpack("<HHH", ico, 0)
+          assert (reserved, kind, count) == (0, 1, 10)
+          frames = {}
+          for i in range(count):
+              w, h, colors, reserved, planes, bits, length, offset = unpack("<BBBBHHII", ico, 6 + 16 * i)
+              w, h = w or 256, h or 256
+              assert w == h and w in expected_sizes and w not in frames
+              assert (colors, reserved, planes, bits) == (0, 0, 1, 32)
+              assert offset >= 6 + 16 * count and offset + length <= len(ico)
+              png = ico[offset:offset + length]
+              assert png[:8] == b"\x89PNG\r\n\x1a\n" and png[12:16] == b"IHDR"
+              assert unpack(">II", png, 16) == (w, h)
+              assert png[24:26] == bytes([8, 6]), "Expected 8-bit RGBA PNG frame"
+              frames[w] = png
+          assert set(frames) == expected_sizes
+          assert exe[:2] == b"MZ"
+          pe = unpack("<I", exe, 0x3C)[0]
+          assert exe[pe:pe + 4] == b"PE\0\0"
+          sections = unpack("<H", exe, pe + 6)[0]
+          optional_size = unpack("<H", exe, pe + 20)[0]
+          optional = pe + 24
+          magic = unpack("<H", exe, optional)[0]
+          assert magic in (0x10B, 0x20B)
+          data_directory = optional + (96 if magic == 0x10B else 112)
+          resource_rva, resource_size = unpack("<II", exe, data_directory + 16)
+          assert resource_rva and resource_size
+          
+          def rva_to_offset(rva, size=1):
+              section_table = optional + optional_size
+              for i in range(sections):
+                  s = section_table + 40 * i
+                  virtual_size, virtual_address, raw_size, raw_offset = unpack("<IIII", exe, s + 8)
+                  if virtual_address <= rva and rva + size <= virtual_address + raw_size:
+                      offset = raw_offset + rva - virtual_address
+                      assert offset + size <= len(exe)
+                      return offset
+              raise ValueError("RVA is not backed by file data")
+          
+          resource_base = rva_to_offset(resource_rva, resource_size)
+          
+          def entries(relative):
+              assert relative >= 0 and relative + 16 <= resource_size
+              named, ids = unpack("<HH", exe, resource_base + relative + 12)
+              total = named + ids
+              assert relative + 16 + total * 8 <= resource_size
+              result = []
+              for i in range(total):
+                  name, target = unpack("<II", exe, resource_base + relative + 16 + 8 * i)
+                  result.append((name, bool(target & 0x80000000), target & 0x7FFFFFFF))
+              return result
+          
+          def leaves(relative, depth=0):
+              assert depth < 3
+              result = []
+              for name, is_directory, target in entries(relative):
+                  if is_directory:
+                      result.extend(leaves(target, depth + 1))
+                  else:
+                      assert target + 16 <= resource_size
+                      rva, length, codepage, reserved = unpack("<IIII", exe, resource_base + target)
+                      offset = rva_to_offset(rva, length)
+                      result.append(exe[offset:offset + length])
+              return result
+          
+          types = {name: (is_directory, offset) for name, is_directory, offset in entries(0)}
+          assert 3 in types and 14 in types, "Missing RT_ICON or RT_GROUP_ICON"
+          icons = {}
+          for name, is_directory, offset in entries(types[3][1]):
+              assert not name & 0x80000000 and is_directory
+              payloads = leaves(offset)
+              assert len(payloads) == 1
+              icons[name] = payloads[0]
+          groups = []
+          for name, is_directory, offset in entries(types[14][1]):
+              assert is_directory
+              groups.extend(leaves(offset))
+          assert len(icons) == 10 and len(groups) == 1
+          group = groups[0]
+          assert unpack("<HHH", group, 0) == (0, 1, 10)
+          assert len(group) == 6 + 14 * 10
+          used = set()
+          seen_sizes = set()
+          for i in range(10):
+              w, h, colors, reserved, planes, bits, length, icon_id = unpack("<BBBBHHIH", group, 6 + 14 * i)
+              w, h = w or 256, h or 256
+              assert w == h and w in frames and w not in seen_sizes
+              seen_sizes.add(w)
+              assert (colors, reserved, planes, bits) == (0, 0, 1, 32)
+              assert icon_id in icons and icon_id not in used
+              assert len(icons[icon_id]) == length and icons[icon_id] == frames[w]
+              used.add(icon_id)
+          assert used == set(icons)
+          assert seen_sizes == expected_sizes
+          print("Verified 10 embedded RT_ICON resources and 1 RT_GROUP_ICON; every PNG frame exactly matches the checked-in ICO.")
+          print("ICO_SHA256=" + hashlib.sha256(ico).hexdigest())
+          print("EXE_SHA256=" + hashlib.sha256(exe).hexdigest())
+          
 
       - name: Upload EXE, ZIP, license and provenance
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: CodexQuotaTray-v2.6.0-Windows
+          name: CodexQuotaTray-v2.6.0-icon.1-Windows
           path: dist/*
           if-no-files-found: error
           retention-days: 30
           compression-level: 6
+

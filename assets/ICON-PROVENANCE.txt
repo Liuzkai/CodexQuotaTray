@@ -1,0 +1,55 @@
+CodexQuotaTray application icon reproduction
+
+Original design and geometry:
+  tools/IconGenerator.cs
+  https://github.com/Liuzkai/CodexQuotaTray/blob/a89f33f0aa8395d421567f83f7720beb7c08b7d3/tools/IconGenerator.cs
+  Git blob: 8b4bbe770dbdf606d0349762ab35d57f3f68f702
+  Copyright (c) 2026 SYD-Official; MIT License (license text below).
+
+The original source was read as text only. No repository executable, compiled
+repository code, IconGenerator.exe, or repository build script was executed.
+No software was installed. The new reproduce_icon.py renderer uses only the
+Python standard library and the environment's existing Pillow installation.
+icon-spec.json records the source's colors, bounds, stroke widths, angular
+sweeps, rounded caps, frame sizes, and smaller-size simplification.
+
+The checked-in ICO is intended to be consumed directly by the application
+build, without running any icon generator. It contains ten 32-bit RGBA PNG
+frames: 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 pixels square.
+The blue inner arc is included only at 32 pixels and larger, as in the source.
+
+This is a geometry-preserving recreation, not a pixel-identical GDI+ rendering.
+Pillow's supersampling, gradient sampling, stroke coverage and bicubic filter
+produce slight rasterization differences from System.Drawing/GDI+.
+
+To reproduce locally when Python and Pillow are already available:
+  python assets/reproduce_icon.py
+The script writes only the ICO, preview images and validation.json beside it.
+validation.json records PNG integrity, all dimensions, 32-bit RGBA payloads,
+alpha range, transparent corners, decoder checks and SHA-256 hashes.
+
+The renderer and JSON specification are checked into the repository under assets/.
+License for the reproduced design follows.
+
+MIT License
+
+Copyright (c) 2026 SYD-Official
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
