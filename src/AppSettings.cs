@@ -36,6 +36,9 @@ namespace CodexQuotaTray
         public int PopupScalePercent { get; set; }
         public int FontScalePercent { get; set; }
         public int WidgetScalePercent { get; set; }
+        public bool WidgetPositionSaved { get; set; }
+        public int WidgetX { get; set; }
+        public int WidgetY { get; set; }
 
         public bool IsEnglish
         {
@@ -63,12 +66,19 @@ namespace CodexQuotaTray
             PopupScalePercent = 100;
             FontScalePercent = 100;
             WidgetScalePercent = 100;
+            WidgetPositionSaved = false;
+            WidgetX = 0;
+            WidgetY = 0;
         }
 
         public static AppSettings Load()
         {
+            return Load(GetPath());
+        }
+
+        internal static AppSettings Load(string path)
+        {
             var settings = new AppSettings();
-            var path = GetPath();
             if (!File.Exists(path))
             {
                 return settings;
@@ -107,6 +117,17 @@ namespace CodexQuotaTray
                 if (TryGet(values, "PopupScalePercent", out seconds) && IsInRange(seconds, 80, 120)) settings.PopupScalePercent = seconds;
                 if (TryGet(values, "FontScalePercent", out seconds) && IsInRange(seconds, 80, 120)) settings.FontScalePercent = seconds;
                 if (TryGet(values, "WidgetScalePercent", out seconds) && IsInRange(seconds, 70, 130)) settings.WidgetScalePercent = seconds;
+                bool positionSaved;
+                int x;
+                int y;
+                if (TryGet(values, "WidgetPositionSaved", out positionSaved) && positionSaved &&
+                    TryGet(values, "WidgetX", out x) && IsInRange(x, -1000000, 1000000) &&
+                    TryGet(values, "WidgetY", out y) && IsInRange(y, -1000000, 1000000))
+                {
+                    settings.WidgetPositionSaved = true;
+                    settings.WidgetX = x;
+                    settings.WidgetY = y;
+                }
                 int argb;
                 if (TryGet(values, "CustomPrimary", out argb)) settings.CustomPrimary = Color.FromArgb(argb);
                 if (TryGet(values, "CustomSecondary", out argb)) settings.CustomSecondary = Color.FromArgb(argb);
@@ -121,7 +142,11 @@ namespace CodexQuotaTray
 
         public void Save()
         {
-            var path = GetPath();
+            Save(GetPath());
+        }
+
+        internal void Save(string path)
+        {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllLines(path, new[]
             {
@@ -138,7 +163,10 @@ namespace CodexQuotaTray
                 "ActivityRange=" + ActivityRange,
                 "PopupScalePercent=" + PopupScalePercent,
                 "FontScalePercent=" + FontScalePercent,
-                "WidgetScalePercent=" + WidgetScalePercent
+                "WidgetScalePercent=" + WidgetScalePercent,
+                "WidgetPositionSaved=" + WidgetPositionSaved,
+                "WidgetX=" + WidgetX.ToString(CultureInfo.InvariantCulture),
+                "WidgetY=" + WidgetY.ToString(CultureInfo.InvariantCulture)
             });
         }
 
