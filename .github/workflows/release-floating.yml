@@ -1,0 +1,153 @@
+name: Release floating widget v2.6.0-floating.1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/release-floating.yml"]
+
+# Only the publish job gets repository write permission.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-v2.6.0-floating.1
+  cancel-in-progress: false
+
+env:
+  SOURCE_SHA: 92a182055f68293f50df1f3aed059d1f68588c11
+  RELEASE_TAG: v2.6.0-floating.1
+
+jobs:
+  build:
+    if: github.repository == 'Liuzkai/CodexQuotaTray' && github.ref == 'refs/heads/main'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the tested application source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 92a182055f68293f50df1f3aed059d1f68588c11
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Compile full app and run isolated widget tests
+        shell: powershell
+        run: |
+          if ((git rev-parse HEAD) -ne $env:SOURCE_SHA) { throw 'Unexpected source commit.' }
+          & .\tools\build-floating.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Build or isolated tests failed.' }
+
+      - name: Verify embedded icons and attach build provenance
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, json, os, subprocess, textwrap, zipfile
+          source = os.environ['SOURCE_SHA']
+          dist = Path('dist')
+          package = Path('build/floating/package')
+          workflow = Path('.github/workflows/build-windows.yml').read_text(encoding='utf-8-sig')
+          checker = workflow.split('        shell: python\n        run: |\n', 1)[1].split('\n      - name:', 1)[0]
+          checker = textwrap.dedent(checker).replace('dist/CodexQuotaTray-v2.6.0-icon.1.exe', 'dist/CodexQuotaTray-v2.6.0-floating.1.exe')
+          check_path = Path('build/floating/verify-icon.py')
+          check_path.write_text(checker, encoding='utf-8')
+          result = subprocess.run(['python', str(check_path)], capture_output=True, text=True, check=True)
+          print(result.stdout)
+          (dist / 'ICON-VERIFICATION.txt').write_text(result.stdout, encoding='utf-8')
+          info = json.loads((package / 'BUILDINFO.json').read_text(encoding='utf-8'))
+          assert info['sourceCommit'] == source and info['sourceWorkingTreeDirty'] is False
+          assert info['embeddedIconSha256'] == '7d122b879723a35c344e4a713c39989850b5f6724a8c71965caa029fd1185f20'
+          tests = (package / 'TEST-RESULTS.txt').read_text(encoding='utf-16')
+          assert 'PASS: 41 assertions;' in tests
+          for name in ['BUILDINFO.json', 'SOURCE_COMMIT.txt', 'SOURCE_SHA256SUMS.txt', 'TEST-RESULTS.txt', 'LICENSE']:
+              (dist / name).write_bytes((package / name).read_bytes())
+          provenance = {
+              'sourceCommit': source,
+              'workflowCommit': os.environ['GITHUB_SHA'],
+              'workflowRun': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'workflowAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'runner': os.environ.get('ImageOS'),
+              'runnerImageVersion': os.environ.get('ImageVersion'),
+              'verification': '41 isolated widget assertions; PE GUI header/version; all 10 embedded icon frames match the preserved ICO.',
+              'execution': 'No application EXE, upstream EXE, live parser tests or preview was run; no user Codex credentials or sessions were read.',
+              'rebuild': 'GitHub Actions rebuilt the same tested source commit; compiler timestamps and runner version can differ from the earlier local build.'
+          }
+          (dist / 'RELEASE-PROVENANCE.json').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
+          archive = dist / 'CodexQuotaTray-v2.6.0-floating.1-Windows.zip'
+          with zipfile.ZipFile(archive) as z:
+              for line in z.read('SHA256SUMS.txt').decode('utf-8-sig').splitlines():
+                  digest, name = line.split('  ', 1)
+                  assert hashlib.sha256(z.read(name)).hexdigest() == digest, name
+              assert z.read('CodexQuotaTray-v2.6.0-floating.1.exe') == (dist / 'CodexQuotaTray-v2.6.0-floating.1.exe').read_bytes()
+          checksums = dist / 'CodexQuotaTray-v2.6.0-floating.1-SHA256SUMS.txt'
+          checksums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n' for p in sorted(dist.iterdir()) if p != checksums), encoding='utf-8')
+          print(checksums.read_text())
+
+      - name: Upload verified release payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: floating.1-verified-release
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: build
+    if: github.repository == 'Liuzkai/CodexQuotaTray' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # No checkout and no repository code is executed in this write-enabled job.
+      - name: Download this run's verified payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: floating.1-verified-release
+          path: payload
+
+      - name: Check payload before publishing
+        working-directory: payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check CodexQuotaTray-v2.6.0-floating.1-SHA256SUMS.txt
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          assert Path('SOURCE_COMMIT.txt').read_text().strip() == os.environ['SOURCE_SHA']
+          info = json.loads(Path('BUILDINFO.json').read_text())
+          assert info['sourceCommit'] == os.environ['SOURCE_SHA'] and info['sourceWorkingTreeDirty'] is False
+          assert len(list(Path('.').iterdir())) == 10
+          PY
+
+      - name: Create new draft, verify uploads, then publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Never overwrite an existing release or its assets; no --clobber or delete calls.
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to modify it.' >&2
+            exit 1
+          fi
+          cat > release-notes.md <<'NOTES'
+          悬浮窗支持鼠标左键自由拖动、松开保存位置、重启恢复；刷新不再吸回任务栏。新增“重置悬浮窗位置”，支持负坐标、多屏工作区和 DPI 变化后的可见性恢复。保留 v2.6.0 功能以及多尺寸应用图标修复。
+
+          先退出旧实例，再运行 EXE。ZIP 包含程序、说明、MIT 许可、测试结果和源码校验信息。未签名社区版本；手动检查更新仍指向原上游。
+
+          41 项隔离测试、PE/版本检查和 10 个嵌入图标逐字节校验通过。真实多屏热插拔、跨 DPI 鼠标拖动和完整弹窗交互仍需实机验收。未运行主程序或上游 EXE，未读取用户 Codex 凭据或真实会话。
+
+          本次在 GitHub Actions 从已验证的固定源码提交重新构建。编译器版本和时间戳可能导致二进制与早先本地构建不同；以本 Release 的 SHA256SUMS 文件为准。包内“尚未发布”的说明反映固定源码提交时的状态，本页为已公开发布版本。
+          NOTES
+          printf '\nSource commit: `%s`\n\nBuild run: https://github.com/%s/actions/runs/%s\n' "$SOURCE_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
+          gh release create "$RELEASE_TAG" payload/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title 'CodexQuotaTray v2.6.0-floating.1 — draggable floating widget' --notes-file release-notes.md --draft
+          mkdir verify-upload
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir verify-upload
+          (cd verify-upload && sha256sum --check CodexQuotaTray-v2.6.0-floating.1-SHA256SUMS.txt)
+          diff -qr payload verify-upload
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,isDraft,tagName,assets
