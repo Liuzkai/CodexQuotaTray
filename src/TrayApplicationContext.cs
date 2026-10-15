@@ -23,6 +23,7 @@ namespace CodexQuotaTray
         private readonly ToolStripMenuItem _showMenuItem;
         private readonly ToolStripMenuItem _refreshMenuItem;
         private readonly ToolStripMenuItem _exitMenuItem;
+        private readonly ToolStripMenuItem _resetWidgetPositionMenuItem;
         private readonly AppSettings _settings;
         private Icon _currentIcon;
         private Rectangle _lastTrayAnchor;
@@ -52,6 +53,7 @@ namespace CodexQuotaTray
             _popup.UpdateCheckRequested += delegate { CheckForUpdates(); };
 
             _widget = new TaskbarWidgetForm();
+            _widget.PositionChanged += delegate { SaveSettings(); };
             _widget.ApplySettings(_settings);
             _lastTrayAnchor = new Rectangle(Cursor.Position.X - 1, Cursor.Position.Y - 1, 3, 3);
             _widget.Click += delegate { AcknowledgeCompletionReminder(); TogglePopup(_widget.GetAnchorBounds()); };
@@ -63,8 +65,16 @@ namespace CodexQuotaTray
             _refreshMenuItem.Click += delegate { RefreshInBackground(); };
             _exitMenuItem = new ToolStripMenuItem();
             _exitMenuItem.Click += delegate { ExitThread(); };
+            _resetWidgetPositionMenuItem = new ToolStripMenuItem();
+            _resetWidgetPositionMenuItem.Click += delegate
+            {
+                _settings.WidgetVisible = true;
+                _widget.ResetPosition();
+                ApplySettingsChange();
+            };
             menu.Items.Add(_showMenuItem);
             menu.Items.Add(_refreshMenuItem);
+            menu.Items.Add(_resetWidgetPositionMenuItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(_exitMenuItem);
             _widget.ContextMenuStrip = menu;
@@ -120,10 +130,15 @@ namespace CodexQuotaTray
             _widget.SetVisible(_settings.WidgetVisible);
         }
 
-        private void ApplySettingsChange()
+        private void SaveSettings()
         {
             try { _settings.Save(); }
             catch { }
+        }
+
+        private void ApplySettingsChange()
+        {
+            SaveSettings();
 
             _lastSystemLightAppearance = ThemePalette.SystemUsesLightAppearance();
             _lastSystemLanguage = AppSettings.SystemLanguageName();
@@ -142,6 +157,7 @@ namespace CodexQuotaTray
 
         private void UpdateLanguage()
         {
+            _resetWidgetPositionMenuItem.Text = T("重置悬浮窗位置", "Reset floating meter position");
             _showMenuItem.Text = T("显示详情", "Show details");
             _refreshMenuItem.Text = T("立即刷新", "Refresh now");
             _exitMenuItem.Text = T("退出", "Quit");
@@ -203,7 +219,6 @@ namespace CodexQuotaTray
             _lastResult = result;
             _popup.ApplyResult(_lastResult);
             _widget.ApplyResult(_lastResult);
-            _widget.RefreshDynamicAnchor();
             ApplyVisualResult(_lastResult);
         }
 
